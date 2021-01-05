@@ -816,6 +816,8 @@ func clientHelloInfo(c *Conn, clientHello *clientHelloMsg) *ClientHelloInfo {
 		SignatureSchemes:  clientHello.supportedSignatureAlgorithms,
 		SupportedProtos:   clientHello.alpnProtocols,
 		SupportedVersions: supportedVersions,
+		Extensions:        clientHello.extensions,
+		Version:           clientHello.vers,
 		Conn:              c.conn,
 	}
 }

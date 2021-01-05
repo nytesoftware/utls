@@ -6,8 +6,9 @@ package tls
 
 import (
 	"fmt"
-	"golang.org/x/crypto/cryptobyte"
 	"strings"
+
+	"golang.org/x/crypto/cryptobyte"
 )
 
 // The marshalingFunction type is an adapter to allow the use of ordinary
@@ -93,6 +94,7 @@ type clientHelloMsg struct {
 	pskModes                         []uint8
 	pskIdentities                    []pskIdentity
 	pskBinders                       [][]byte
+	extensions                       []uint16
 }
 
 func (m *clientHelloMsg) marshal() []byte {
@@ -398,6 +400,8 @@ func (m *clientHelloMsg) unmarshal(data []byte) bool {
 			!extensions.ReadUint16LengthPrefixed(&extData) {
 			return false
 		}
+
+		m.extensions = append(m.extensions, extension)
 
 		switch extension {
 		case extensionServerName:
