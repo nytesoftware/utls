@@ -7,9 +7,11 @@ package tls
 import (
 	"container/list"
 	"crypto"
+	"crypto/md5"
 	"crypto/rand"
 	"crypto/sha512"
 	"crypto/x509"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
@@ -20,7 +22,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/refraction-networking/utls/cpu"
+	"github.com/nytesoftware/utls/cpu"
 )
 
 const (
@@ -317,36 +319,45 @@ const (
 // guide certificate selection in the GetCertificate callback.
 type ClientHelloInfo struct {
 	// CipherSuites lists the CipherSuites supported by the client (e.g.
-	// TLS_AES_128_GCM_SHA256, TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256).
+	// TLS_RSA_WITH_RC4_128_SHA).
 	CipherSuites []uint16
 
 	// ServerName indicates the name of the server requested by the client
 	// in order to support virtual hosting. ServerName is only set if the
-	// client is using SNI (see RFC 4366, Section 3.1).
+	// client is using SNI (see
+	// http://tools.ietf.org/html/rfc4366#section-3.1).
 	ServerName string
 
 	// SupportedCurves lists the elliptic curves supported by the client.
 	// SupportedCurves is set only if the Supported Elliptic Curves
-	// Extension is being used (see RFC 4492, Section 5.1.1).
+	// Extension is being used (see
+	// http://tools.ietf.org/html/rfc4492#section-5.1.1).
 	SupportedCurves []CurveID
 
 	// SupportedPoints lists the point formats supported by the client.
 	// SupportedPoints is set only if the Supported Point Formats Extension
-	// is being used (see RFC 4492, Section 5.1.2).
+	// is being used (see
+	// http://tools.ietf.org/html/rfc4492#section-5.1.2).
 	SupportedPoints []uint8
 
 	// SignatureSchemes lists the signature and hash schemes that the client
 	// is willing to verify. SignatureSchemes is set only if the Signature
-	// Algorithms Extension is being used (see RFC 5246, Section 7.4.1.4.1).
+	// Algorithms Extension is being used (see
+	// https://tools.ietf.org/html/rfc5246#section-7.4.1.4.1).
 	SignatureSchemes []SignatureScheme
 
 	// SupportedProtos lists the application protocols supported by the client.
 	// SupportedProtos is set only if the Application-Layer Protocol
-	// Negotiation Extension is being used (see RFC 7301, Section 3.1).
+	// Negotiation Extension is being used (see
+	// https://tools.ietf.org/html/rfc7301#section-3.1).
 	//
 	// Servers can select a protocol by setting Config.NextProtos in a
 	// GetConfigForClient return value.
 	SupportedProtos []string
+
+	Extensions []uint16
+
+	Version uint16
 
 	// SupportedVersions lists the TLS versions supported by the client.
 	// For TLS versions less than 1.3, this is extrapolated from the max
@@ -358,6 +369,60 @@ type ClientHelloInfo struct {
 	// from, or write to, this connection; that will cause the TLS
 	// connection to fail.
 	Conn net.Conn
+}
+
+func (c *ClientHelloInfo) JA3() string {
+	greaseTable := map[uint16]bool{
+		0x0a0a: true, 0x1a1a: true, 0x2a2a: true, 0x3a3a: true,
+		0x4a4a: true, 0x5a5a: true, 0x6a6a: true, 0x7a7a: true,
+		0x8a8a: true, 0x9a9a: true, 0xaaaa: true, 0xbaba: true,
+		0xcaca: true, 0xdada: true, 0xeaea: true, 0xfafa: true,
+	}
+
+	// SSLVersion,Cipher,SSLExtension,EllipticCurve,EllipticCurvePointFormat
+
+	s := ""
+	s += fmt.Sprintf("%d,", c.Version)
+
+	vals := []string{}
+	for _, v := range c.CipherSuites {
+		vals = append(vals, fmt.Sprintf("%d", v))
+	}
+
+	s += fmt.Sprintf("%s,", strings.Join(vals, "-"))
+
+	vals = []string{}
+	for _, v := range c.Extensions {
+		if _, ok := greaseTable[v]; ok {
+			continue
+		}
+
+		vals = append(vals, fmt.Sprintf("%d", v))
+	}
+
+	s += fmt.Sprintf("%s,", strings.Join(vals, "-"))
+
+	vals = []string{}
+	for _, v := range c.SupportedCurves {
+		vals = append(vals, fmt.Sprintf("%d", v))
+	}
+
+	s += fmt.Sprintf("%s,", strings.Join(vals, "-"))
+
+	vals = []string{}
+	for _, v := range c.SupportedPoints {
+		vals = append(vals, fmt.Sprintf("%d", v))
+	}
+
+	s += fmt.Sprintf("%s", strings.Join(vals, "-"))
+
+	return s
+}
+
+func (c *ClientHelloInfo) JA3Digest() string {
+	hasher := md5.New()
+	hasher.Write([]byte(c.JA3()))
+	return hex.EncodeToString(hasher.Sum(nil))
 }
 
 // CertificateRequestInfo contains information from a server's
